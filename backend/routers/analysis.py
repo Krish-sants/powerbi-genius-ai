@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 from agents.orchestrator import get_job
 from models.schemas import AnalysisStatus
 from services.ml_service import MLService
+from utils import df_cache
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 ml = MLService()
@@ -15,6 +16,12 @@ def _get_state(job_id: str) -> Dict[str, Any]:
     if not state:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
     return state
+
+
+def _get_cleaned_df(job_id: str, state: Dict[str, Any]) -> pd.DataFrame:
+    return df_cache.get_or_rebuild(
+        job_id, "cleaned", state.get("cleaned_data") or state.get("raw_data")
+    )
 
 
 @router.get("/status/{job_id}", response_model=AnalysisStatus)
@@ -54,14 +61,12 @@ async def get_result(job_id: str):
 @router.get("/data/{job_id}")
 async def get_data(job_id: str, page: int = 1, page_size: int = 100):
     state = _get_state(job_id)
-    cleaned = state.get("cleaned_data") or state.get("raw_data", {})
-    records = cleaned.get("data", [])
-    total = len(records)
+    df = _get_cleaned_df(job_id, state)
+    total = len(df)
     start = (page - 1) * page_size
-    end = start + page_size
     return {
-        "columns": cleaned.get("columns", []),
-        "data": records[start:end],
+        "columns": list(df.columns),
+        "data": df.iloc[start:start + page_size].to_dict(orient="records"),
         "total": total,
         "page": page,
         "pages": (total + page_size - 1) // page_size,
@@ -82,11 +87,9 @@ async def get_profile(job_id: str):
 @router.get("/forecast/{job_id}")
 async def get_forecast(job_id: str, date_col: str = None, value_col: str = None, periods: int = 12):
     state = _get_state(job_id)
-    cleaned = state.get("cleaned_data", {})
-    if not cleaned.get("data"):
+    df = _get_cleaned_df(job_id, state)
+    if df.empty:
         raise HTTPException(status_code=400, detail="No cleaned data available")
-
-    df = pd.DataFrame(cleaned["data"])
 
     if not date_col:
         date_cols = df.select_dtypes(include=["datetime64"]).columns.tolist()
@@ -119,8 +122,7 @@ async def get_forecast(job_id: str, date_col: str = None, value_col: str = None,
 @router.get("/anomalies/{job_id}")
 async def get_anomalies(job_id: str):
     state = _get_state(job_id)
-    cleaned = state.get("cleaned_data", {})
-    df = pd.DataFrame(cleaned.get("data", []))
+    df = _get_cleaned_df(job_id, state)
     numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()[:6]
     if not numeric_cols:
         return {"anomaly_count": 0, "message": "No numeric columns"}
@@ -130,16 +132,14 @@ async def get_anomalies(job_id: str):
 @router.get("/correlation/{job_id}")
 async def get_correlation(job_id: str):
     state = _get_state(job_id)
-    cleaned = state.get("cleaned_data", {})
-    df = pd.DataFrame(cleaned.get("data", []))
+    df = _get_cleaned_df(job_id, state)
     return ml.compute_correlation_matrix(df)
 
 
 @router.get("/distribution/{job_id}")
 async def get_distribution(job_id: str, column: str):
     state = _get_state(job_id)
-    cleaned = state.get("cleaned_data", {})
-    df = pd.DataFrame(cleaned.get("data", []))
+    df = _get_cleaned_df(job_id, state)
     if column not in df.columns:
         raise HTTPException(status_code=400, detail=f"Column {column} not found")
     return ml.compute_distribution(df, column)
@@ -148,8 +148,7 @@ async def get_distribution(job_id: str, column: str):
 @router.get("/pareto/{job_id}")
 async def get_pareto(job_id: str, category_col: str, value_col: str):
     state = _get_state(job_id)
-    cleaned = state.get("cleaned_data", {})
-    df = pd.DataFrame(cleaned.get("data", []))
+    df = _get_cleaned_df(job_id, state)
     if category_col not in df.columns or value_col not in df.columns:
         raise HTTPException(status_code=400, detail="Column not found")
     return ml.compute_pareto(df, category_col, value_col)

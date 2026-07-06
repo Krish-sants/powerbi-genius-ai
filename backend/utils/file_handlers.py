@@ -25,14 +25,17 @@ async def detect_encoding(file_path: str) -> str:
 
 async def read_csv(file_path: str) -> pd.DataFrame:
     encoding = await detect_encoding(file_path)
-    for sep in [",", ";", "\t", "|"]:
+    # Detect the separator on a small sample instead of parsing the full file per candidate
+    sep = ","
+    for candidate in [",", ";", "\t", "|"]:
         try:
-            df = pd.read_csv(file_path, encoding=encoding, sep=sep, low_memory=False)
-            if len(df.columns) > 1:
-                return df
+            sample = pd.read_csv(file_path, encoding=encoding, sep=candidate, nrows=50)
+            if len(sample.columns) > 1:
+                sep = candidate
+                break
         except Exception:
             continue
-    return pd.read_csv(file_path, encoding=encoding, low_memory=False)
+    return pd.read_csv(file_path, encoding=encoding, sep=sep, low_memory=False)
 
 
 async def read_excel(file_path: str) -> pd.DataFrame:
@@ -156,21 +159,28 @@ def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def infer_and_cast_types(df: pd.DataFrame) -> pd.DataFrame:
-    for col in df.columns:
-        if df[col].dtype == object:
-            # Try numeric
+    for col in df.select_dtypes(include=[object]).columns:
+        non_null = df[col].dropna()
+        if non_null.empty:
+            continue
+        # Probe a sample first — only convert the full column if the sample passes
+        sample = non_null.sample(n=min(len(non_null), 500), random_state=0)
+
+        numeric_sample = pd.to_numeric(sample, errors="coerce")
+        if numeric_sample.notna().mean() > 0.8:
             numeric_series = pd.to_numeric(df[col], errors="coerce")
             if numeric_series.notna().sum() / max(len(df), 1) > 0.8:
                 df[col] = numeric_series
-                continue
-            # Try datetime
-            try:
-                date_series = pd.to_datetime(df[col], infer_datetime_format=True, errors="coerce")
+            continue
+
+        try:
+            date_sample = pd.to_datetime(sample, errors="coerce", format="mixed")
+            if date_sample.notna().mean() > 0.8:
+                date_series = pd.to_datetime(df[col], errors="coerce", format="mixed")
                 if date_series.notna().sum() / max(len(df), 1) > 0.8:
                     df[col] = date_series
-                    continue
-            except Exception:
-                pass
+        except Exception:
+            pass
     return df
 
 
@@ -186,8 +196,10 @@ def dataframe_to_dict(df: pd.DataFrame, max_rows: int = 10000) -> Dict[str, Any]
 
 
 async def load_from_url(url: str) -> pd.DataFrame:
+    import asyncio
     import requests
-    response = requests.get(url, timeout=30)
+    # requests is blocking — run it in a thread so the event loop stays responsive
+    response = await asyncio.to_thread(requests.get, url, timeout=30)
     response.raise_for_status()
 
     content_type = response.headers.get("content-type", "")

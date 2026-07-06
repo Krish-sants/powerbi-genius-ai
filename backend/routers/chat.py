@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from agents.orchestrator import get_job
 from models.schemas import NLQueryRequest, NLQueryResponse
 from services.llm_service import chat_json
+from utils import df_cache
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -23,7 +24,7 @@ async def natural_language_query(request: NLQueryRequest):
     business_context = state.get("business_context", "")
     data_dict = state.get("data_dictionary", {})
 
-    df = pd.DataFrame(cleaned.get("data", []))
+    df = df_cache.get_or_rebuild(request.job_id, "cleaned", cleaned)
     columns = list(df.columns)
     sample = df.head(5).to_dict(orient="records")
     kpi_text = "\n".join([f"- {k.get('display_name')}: {k.get('formatted_value')}" for k in kpis[:6]])

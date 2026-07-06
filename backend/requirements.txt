@@ -1,5 +1,6 @@
 # FastAPI & Server
 fastapi==0.115.5
+starlette>=0.40.0,<0.42.0  # fastapi 0.115.x is incompatible with starlette 1.x
 uvicorn[standard]==0.32.1
 python-multipart==0.0.20
 websockets==13.1
@@ -9,10 +10,9 @@ httpx==0.27.2
 anthropic>=0.41.0
 openai>=1.58.1
 langgraph==0.2.60
-langchain==0.3.13
-langchain-openai==0.2.14
-langchain-anthropic==0.3.3
-langchain-community==0.3.13
+# langchain/langchain-openai/-anthropic/-community removed: never imported
+# (LLM calls use the anthropic/openai SDKs directly) and langchain 0.3.13
+# pins numpy<2, conflicting with numpy==2.1.3 on fresh installs
 
 # Data Processing
 pandas==2.2.3

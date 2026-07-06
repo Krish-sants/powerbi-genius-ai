@@ -11,6 +11,7 @@ from utils.file_handlers import (
     load_file, load_from_url, clean_column_names,
     infer_and_cast_types, dataframe_to_dict
 )
+from utils import df_cache
 
 
 UPLOAD_DIR = Path("./uploads")
@@ -28,6 +29,7 @@ class IngestionAgent:
             df = infer_and_cast_types(df)
             df = df.dropna(how="all").reset_index(drop=True)
 
+            df_cache.set_df(state["job_id"], "raw", df)
             state["raw_data"] = dataframe_to_dict(df)
             state["agent_statuses"]["ingestion_agent"] = "completed"
             state["progress"] = 15

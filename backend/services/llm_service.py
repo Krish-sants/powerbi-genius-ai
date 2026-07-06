@@ -94,12 +94,31 @@ async def chat_json(
         return await _openai_json(messages, system, model_override, temperature, max_tokens)
 
 
-async def _anthropic_json(messages, system, model_override, temperature, max_tokens) -> Dict:
-    import anthropic as anthropic_sdk
+# Reuse a single async client per provider — creating one per request throws away
+# the underlying HTTP connection pool and adds TLS handshake latency to every call.
+_anthropic_client = None
+_openai_client = None
 
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+
+def _get_anthropic_client():
+    global _anthropic_client
+    if _anthropic_client is None:
+        import anthropic as anthropic_sdk
+        _anthropic_client = anthropic_sdk.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    return _anthropic_client
+
+
+def _get_openai_client():
+    global _openai_client
+    if _openai_client is None:
+        from openai import AsyncOpenAI
+        _openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    return _openai_client
+
+
+async def _anthropic_json(messages, system, model_override, temperature, max_tokens) -> Dict:
     model = model_override or "claude-sonnet-4-6"
-    client = anthropic_sdk.AsyncAnthropic(api_key=api_key)
+    client = _get_anthropic_client()
 
     sys_prompt = system or "You are a world-class business intelligence analyst. Always respond with valid JSON only."
     filtered = [m for m in messages if m.get("role") != "system"] or messages
@@ -122,11 +141,8 @@ async def _anthropic_json(messages, system, model_override, temperature, max_tok
 
 
 async def _openai_json(messages, system, model_override, temperature, max_tokens) -> Dict:
-    from openai import AsyncOpenAI
-
-    api_key = os.getenv("OPENAI_API_KEY")
     model = model_override or "gpt-4o"
-    client = AsyncOpenAI(api_key=api_key)
+    client = _get_openai_client()
 
     all_messages = []
     if system:

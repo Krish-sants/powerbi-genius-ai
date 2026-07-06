@@ -11,6 +11,7 @@ from models.schemas import (
     BusinessDomain, KPIDefinition, Insight
 )
 from services.llm_service import chat_json
+from utils import df_cache
 
 COLOR_PALETTES = {
     "executive_dark": ["#1A1F36", "#6366F1", "#22D3EE", "#10B981", "#F59E0B", "#EF4444", "#A855F7", "#EC4899"],
@@ -30,7 +31,7 @@ class DashboardAgent:
     async def run(self, state: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[DashboardAgent] Starting for job {state['job_id']}")
         try:
-            df = pd.DataFrame(state["cleaned_data"]["data"])
+            df = df_cache.get_or_rebuild(state["job_id"], "cleaned", state.get("cleaned_data"))
             domain = BusinessDomain(state.get("domain", "unknown"))
             kpis = [KPIDefinition(**k) for k in state.get("kpis", [])]
             insights = [Insight(**i) for i in state.get("insights", [])]

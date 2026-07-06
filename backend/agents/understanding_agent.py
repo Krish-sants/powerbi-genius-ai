@@ -6,6 +6,7 @@ from loguru import logger
 
 from models.schemas import BusinessDomain, ColumnProfile
 from services.llm_service import chat_json
+from utils import df_cache
 
 
 DOMAIN_KEYWORDS = {
@@ -39,7 +40,8 @@ class UnderstandingAgent:
             dtypes = raw_data.get("dtypes", {})
             sample = raw_data.get("data", [])[:5]
 
-            profiles = await self._build_profiles(raw_data)
+            df = df_cache.get_or_rebuild(state["job_id"], "raw", raw_data)
+            profiles = await self._build_profiles(df)
             state["column_profiles"] = [p.dict() for p in profiles]
 
             domain = self._detect_domain(columns, sample)
@@ -69,20 +71,21 @@ class UnderstandingAgent:
         best = max(scores, key=lambda d: scores[d])
         return best if scores[best] > 0 else BusinessDomain.UNKNOWN
 
-    async def _build_profiles(self, raw_data: Dict[str, Any]) -> List[ColumnProfile]:
-        df = pd.DataFrame(raw_data.get("data", []))
+    async def _build_profiles(self, df: pd.DataFrame) -> List[ColumnProfile]:
         profiles = []
         for col in df.columns:
             series = df[col]
             is_numeric = pd.api.types.is_numeric_dtype(series)
             is_date = pd.api.types.is_datetime64_any_dtype(series)
-            is_cat = not is_numeric and not is_date and series.nunique() < 50
+            unique_count = int(series.nunique())
+            null_count = int(series.isna().sum())
+            is_cat = not is_numeric and not is_date and unique_count < 50
             profiles.append(ColumnProfile(
                 name=col, dtype=str(series.dtype),
-                non_null_count=int(series.notna().sum()),
-                null_count=int(series.isna().sum()),
-                null_percentage=round(series.isna().mean() * 100, 2),
-                unique_count=int(series.nunique()),
+                non_null_count=len(series) - null_count,
+                null_count=null_count,
+                null_percentage=round(null_count / max(len(series), 1) * 100, 2),
+                unique_count=unique_count,
                 sample_values=series.dropna().head(5).tolist(),
                 min_value=float(series.min()) if is_numeric else None,
                 max_value=float(series.max()) if is_numeric else None,

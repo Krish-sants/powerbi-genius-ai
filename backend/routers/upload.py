@@ -94,13 +94,15 @@ async def upload_multiple(background_tasks: BackgroundTasks, files: list[UploadF
     async def _merge_and_run():
         import pandas as pd
         from utils.file_handlers import load_file, clean_column_names, infer_and_cast_types, dataframe_to_dict
+        from utils import df_cache
         dfs = []
         for p in file_paths:
             df, _ = await load_file(p)
             dfs.append(df)
         merged = pd.concat(dfs, ignore_index=True)
-        merged = clean_column_names(clean_column_names(merged))
+        merged = clean_column_names(merged)
         merged = infer_and_cast_types(merged)
+        df_cache.set_df(job_id, "raw", merged)
         initial_state["raw_data"] = dataframe_to_dict(merged)
         initial_state["agent_statuses"]["ingestion_agent"] = "completed"
         initial_state["progress"] = 15

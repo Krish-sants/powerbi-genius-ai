@@ -1,4 +1,5 @@
 """Agent 5: Insight Generation Agent — executive insights, AI narratives, forecasting, anomaly detection."""
+import asyncio
 import json
 import uuid
 import numpy as np
@@ -8,6 +9,7 @@ from loguru import logger
 
 from models.schemas import Insight, BusinessDomain
 from services.llm_service import chat_json
+from utils import df_cache
 
 
 class InsightAgent:
@@ -16,16 +18,19 @@ class InsightAgent:
     async def run(self, state: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(f"[InsightAgent] Starting for job {state['job_id']}")
         try:
-            df = pd.DataFrame(state["cleaned_data"]["data"])
+            df = df_cache.get_or_rebuild(state["job_id"], "cleaned", state.get("cleaned_data"))
             domain = state.get("domain", "unknown")
             kpis = state.get("kpis", [])
             data_dict = state.get("data_dictionary", {})
             business_context = state.get("business_context", "")
 
-            stat_insights = self._compute_statistical_insights(df)
-            forecast_insights = self._compute_forecast_insights(df)
-            anomaly_insights = self._compute_anomaly_insights(df)
-            ai_insights = await self._generate_ai_insights(df, domain, kpis, data_dict, business_context)
+            # Local computations run in threads, concurrently with the LLM call
+            stat_insights, forecast_insights, anomaly_insights, ai_insights = await asyncio.gather(
+                asyncio.to_thread(self._compute_statistical_insights, df),
+                asyncio.to_thread(self._compute_forecast_insights, df),
+                asyncio.to_thread(self._compute_anomaly_insights, df),
+                self._generate_ai_insights(df, domain, kpis, data_dict, business_context),
+            )
 
             all_insights = stat_insights + forecast_insights + anomaly_insights + ai_insights
             state["insights"] = [i.dict() for i in all_insights]

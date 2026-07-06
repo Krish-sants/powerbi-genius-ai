@@ -14,7 +14,11 @@ const CATEGORY_COLORS: Record<string, string> = {
   Growth: "from-cyan-500/20 to-cyan-600/5 border-cyan-500/30",
   Customer: "from-violet-500/20 to-violet-600/5 border-violet-500/30",
   Volume: "from-amber-500/20 to-amber-600/5 border-amber-500/30",
+  "Data Volume": "from-amber-500/20 to-amber-600/5 border-amber-500/30",
   Efficiency: "from-rose-500/20 to-rose-600/5 border-rose-500/30",
+  Quality: "from-sky-500/20 to-sky-600/5 border-sky-500/30",
+  Time: "from-teal-500/20 to-teal-600/5 border-teal-500/30",
+  Concentration: "from-fuchsia-500/20 to-fuchsia-600/5 border-fuchsia-500/30",
   default: "from-slate-500/20 to-slate-600/5 border-slate-500/30",
 };
 
@@ -24,7 +28,11 @@ const CATEGORY_TEXT: Record<string, string> = {
   Growth: "text-cyan-400",
   Customer: "text-violet-400",
   Volume: "text-amber-400",
+  "Data Volume": "text-amber-400",
   Efficiency: "text-rose-400",
+  Quality: "text-sky-400",
+  Time: "text-teal-400",
+  Concentration: "text-fuchsia-400",
   default: "text-slate-400",
 };
 
@@ -44,10 +52,10 @@ function TrendBadge({ trend, pct }: { trend?: string; pct?: number }) {
 }
 
 export default function KPICards({ kpis }: Props) {
-  const sorted = [...kpis].sort((a, b) => a.priority - b.priority).slice(0, 8);
+  const sorted = [...kpis].sort((a, b) => a.priority - b.priority).slice(0, 12);
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
       {sorted.map((kpi, i) => {
         const colorClass = CATEGORY_COLORS[kpi.category] || CATEGORY_COLORS.default;
         const textClass = CATEGORY_TEXT[kpi.category] || CATEGORY_TEXT.default;
@@ -59,6 +67,7 @@ export default function KPICards({ kpis }: Props) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
             className={`relative rounded-xl p-4 bg-gradient-to-br ${colorClass} border kpi-glow overflow-hidden group hover:scale-[1.02] transition-transform cursor-default`}
+            title={kpi.description}
           >
             {/* Background glow */}
             <div className="absolute top-0 right-0 w-20 h-20 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />

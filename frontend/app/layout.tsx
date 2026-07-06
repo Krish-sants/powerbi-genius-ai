@@ -14,7 +14,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} antialiased`}>
+      {/* suppressHydrationWarning: browser extensions (Grammarly, wallets) inject
+          attributes into <body> before hydration; only this element is suppressed */}
+      <body className={`${inter.className} antialiased`} suppressHydrationWarning>
         {children}
         <Toaster
           position="top-right"
