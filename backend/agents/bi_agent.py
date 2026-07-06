@@ -23,13 +23,33 @@ class BIAgent:
             entity_mapping = state.get("entity_mapping", {})
             quality_report = state.get("quality_report", {})
 
-            # The two LLM calls are independent — run them concurrently
-            kpis, data_model = await asyncio.gather(
+            # The two LLM calls are independent — run them concurrently, but
+            # isolate failures so a bad data-model response can't discard KPIs
+            kpis_result, model_result = await asyncio.gather(
                 self._generate_kpis(df, domain, data_dict, entity_mapping, quality_report),
                 self._generate_data_model(df, domain, data_dict),
+                return_exceptions=True,
             )
+
+            if isinstance(kpis_result, Exception):
+                logger.error(f"[BIAgent] KPI generation failed, using auto KPIs: {kpis_result}")
+                state["errors"].append(f"BI KPI error: {kpis_result}")
+                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                date_cols = df.select_dtypes(include=["datetime64"]).columns.tolist()
+                kpis = sorted(
+                    self._compute_auto_kpis(df, numeric_cols, date_cols, quality_report),
+                    key=lambda k: k.priority,
+                )
+            else:
+                kpis = kpis_result
+
+            if isinstance(model_result, Exception):
+                logger.error(f"[BIAgent] Data model generation failed: {model_result}")
+                state["errors"].append(f"BI data model error: {model_result}")
+                model_result = {}
+
             state["kpis"] = [k.dict() for k in kpis]
-            state["data_model"] = data_model
+            state["data_model"] = model_result
 
             state["agent_statuses"]["bi_agent"] = "completed"
             state["progress"] = 60
@@ -76,7 +96,7 @@ Cover multiple categories (Revenue, Growth, Volume, Efficiency, Customer, Profit
 }}
 Valid aggregations: sum, avg, median, min, max, count, distinct_count, percentage."""
 
-        result = await chat_json([{"role": "user", "content": prompt}])
+        result = await chat_json([{"role": "user", "content": prompt}], max_tokens=8000)
         kpi_list = result.get("kpis", [])
         date_col = date_cols[0] if date_cols else None
 
@@ -319,6 +339,7 @@ Return JSON with the data model and DAX measures:
     }}
   ],
   "calculated_columns": []
-}}"""
+}}
+Limit to at most 10 dax_measures and keep descriptions to one short sentence."""
 
-        return await chat_json([{"role": "user", "content": prompt}])
+        return await chat_json([{"role": "user", "content": prompt}], max_tokens=8000)
